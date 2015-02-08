@@ -50,7 +50,10 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 			'addWhitespace'		=> 1,
 			'includeTemplates' 	=> array(),
 			'usePermission' 		=> 0,
-			'googleAnalytics' 	=> ''
+			'googleAnalytics' 	=> '',
+			'hardLimit'			=> '',
+			'titleLimit'		=> '60',
+			'descriptionLimit'	=> '160'
 		);
 	}
 
@@ -122,6 +125,8 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 
 	public function hookCustomizeSeoTab(HookEvent $e) {
 		$page = wire('pages')->get($this->config->input->get->id);
+		
+		$configData = wire('modules')->getModuleConfigData($this);
 
 		if(!$e->return->get('seo_tab')) return;
 
@@ -129,7 +134,7 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 		$field = $this->modules->get("InputfieldMarkup");
 		$field->label = $this->_("Google Preview");
 		$field->description = $this->_('Updates while you type in a title or description.');
-		$field->value = $this->javascriptAutocomplete().$this->javascriptGooglePreview().$this->getGooglePreview($page->seo_title, $page->seo_canonical, $page->seo_description); // add javascript, too
+		$field->value = $this->javascriptCounter($page, $configData).$this->javascriptAutocomplete().$this->javascriptGooglePreview().$this->getGooglePreview($page->seo_title, $page->seo_canonical, $page->seo_description); // add javascript, too
 		$e->return->insertAfter($field, $e->return->get('seo_tab'));
 
 	}
@@ -635,6 +640,41 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 		$field->addOption('noydir');
 		$field->value = $data['robots'];
 		$fieldset->add($field);
+		
+		// Limits
+		$field = $modules->get("InputfieldCheckbox");
+		$field->name = "hardLimit";
+		$field->label = __("Enforce hard limits?");
+		$field->description = __('This toggles the hard limit for any defined limits. If checked it prevents more than the defined characters to be entered.');
+		$field->checked = $data['hardLimit'];
+		$field->columnWidth = '33%';
+		$fieldset->add($field);
+		
+		if ($data['titleLimit'] == '' || $data['titleLimit'] == 0) {
+			$data['titleLimit'] = '60';
+		}
+
+		$field = $modules->get("InputfieldInteger");
+		$field->name = "titleLimit";
+		$field->label = __("SEO title character limit");
+		$field->description = __('The character limit for the SEO title, recommended and default is 60.');
+		$field->value = $data['titleLimit'];
+		$field->attr('min', '1');
+		$field->columnWidth = '34%';
+		$fieldset->add($field);
+		
+		if ($data['descriptionLimit'] == '' || $data['descriptionLimit'] == 0) {
+			$data['descriptionLimit'] = '160';
+		}
+
+		$field = $modules->get("InputfieldInteger");
+		$field->name = "descriptionLimit";
+		$field->label = __("SEO description character limit");
+		$field->description = __('The character limit for the SEO title, recommended and default is 160.');
+		$field->value = $data['descriptionLimit'];
+		$field->attr('min', '1');
+		$field->columnWidth = '33%';
+		$fieldset->add($field);
 
 
 		// Include stuff
@@ -735,11 +775,61 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 
 		return $form;
 	}
+	
+	static private function javascriptCounter($page,$configData) {
+		$descriptionLimit = $configData['descriptionLimit'];
+		$titleLimit = $configData['titleLimit'];
+		if ($configData['hardLimit'] == 1) {
+			$hardLimit = "
+				if (remainingChars <= 0) {
+					$(this).val($(this).val().substring(0, limit));
+				}
+			";
+			$hardlimit .= "$(this).siblings('p.counter').text(remainingChars+'/'+limit+' characters used');";
+			/* Commented to show the true values used for now -
+			 * if hard limits are enforced on page load then
+			 * these should be uncommented to limit the count
+			 * to the set limit(s). Also comment $hardlimit above
+			 * and uncomment $hardlimit below.
+			 */
+			#	$hardlimit .= "$(this).siblings('p.counter').text(remainingChars<=0?0+'/'+limit:remainingChars+'/'+limit+' characters used');";
+			#	$page->seo_description = substr($page->seo_description, 0, $descriptionLimit);
+			#	$page->seo_title = substr($page->seo_title, 0, $titleLimit);
+			$descriptionChars = strlen($page->seo_description);
+			$titleChars = strlen($page->seo_title);
+		} else {
+			$descriptionChars = strlen($page->seo_description);
+			$titleChars = strlen($page->seo_title);
+			$hardLimit = "
+				$(this).siblings('p.counter').text(remainingChars+'/'+limit+' characters used');
+			";
+		}
+		$titleCount = $titleLimit-$titleChars;
+		$titleDescription = $descriptionLimit-$descriptionChars;
+		$code = "
+		$(document).ready(function(){
+			$('#Inputfield_seo_title').siblings('p').after('<p class=\'counter\'>{$titleCount}/{$titleLimit} characters used</p>');
+			$('#Inputfield_seo_description').siblings('p').after('<p class=\'counter\'>{$titleDescription}/{$descriptionLimit} characters used</p>');
+			$('#Inputfield_seo_title').on('load propertychange keyup input paste',
+			function () {
+				var limit = {$titleLimit};
+				var remainingChars = limit - $(this).val().length;
+				{$hardLimit}
+			});
+			$('#Inputfield_seo_description').on('load propertychange keyup input paste',
+			function () {
+				var limit = {$descriptionLimit};
+				var remainingChars = limit - $(this).val().length;
+				{$hardLimit}
+			});
+		});
+		";
+		return '<script type="text/javascript">'.$code.'</script>';
+	}
 
 	static private function javascriptAutocomplete() {
 		$code = "
 		$(document).ready(function(){
-
 			$('#Inputfield_seo_title, #Inputfield_seo_description, .seo_autocomplete').autocomplete({
 				minLength: 2,
 				source: function(request, response) {
