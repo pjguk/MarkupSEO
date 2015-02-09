@@ -12,7 +12,7 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 	public static function getModuleInfo() {
 		return array(
 			'title' => __('SEO'),
-			'version' => '0.7.0',
+			'version' => '0.8.1',
 			'summary' => __('The all-in-one SEO solution for ProcessWire.'),
 			'autoload' => true,
 			'requires' => array('ProcessWire>=2.4.0', 'PHP>=5.3.8')
@@ -36,7 +36,7 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 			'descriptionSmart' 	=> '', 
 			'image' 				=> '', 
 			'imageSmart' 		=> '',
-			'titleFormat' 		=> '{title} - {sitename}', 
+			'titleFormat' 		=> '', 
 			'canonical' 			=> '', 
 			'canonicalProtocol' => 'auto',
 			'robots' 			=> '', 
@@ -51,8 +51,10 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 			'includeTemplates' 	=> array(),
 			'usePermission' 		=> 0,
 			'googleAnalytics' 	=> '',
-			'hardLimit'			=> '',
-			'titleLimit'		=> '60',
+			'piwikAnalyticsUrl' 	=> '',
+			'piwikAnalyticsIDSite' => '',
+			'hardLimit'			=> 0,
+			'titleLimit'			=> '60',
 			'descriptionLimit'	=> '160'
 		);
 	}
@@ -125,7 +127,6 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 
 	public function hookCustomizeSeoTab(HookEvent $e) {
 		$page = wire('pages')->get($this->config->input->get->id);
-		
 		$configData = wire('modules')->getModuleConfigData($this);
 
 		if(!$e->return->get('seo_tab')) return;
@@ -134,7 +135,10 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 		$field = $this->modules->get("InputfieldMarkup");
 		$field->label = $this->_("Google Preview");
 		$field->description = $this->_('Updates while you type in a title or description.');
-		$field->value = $this->javascriptCounter($page, $configData).$this->javascriptAutocomplete().$this->javascriptGooglePreview().$this->getGooglePreview($page->seo_title, $page->seo_canonical, $page->seo_description); // add javascript, too
+		$field->value = 	$this->javascriptCounter($configData['hardLimit'], $configData['titleLimit'], $configData['descriptionLimit']).
+										$this->javascriptAutocomplete().
+										$this->javascriptGooglePreview().
+										$this->getGooglePreview($page->seo_title, $page->seo_canonical, $page->seo_description); // add javascript, too
 		$e->return->insertAfter($field, $e->return->get('seo_tab'));
 
 	}
@@ -194,21 +198,21 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 						if($configData['title']) {
 							$pageData['title'] = $configData['title'];
 						} elseif($configData['titleSmart'] && $page->get(implode('|', $configData['titleSmart'])) != '') {
-							$pageData['title'] = $page->get(implode('|', $configData['titleSmart']));
+							$pageData['title'] = strip_tags($page->get(implode('|', $configData['titleSmart'])));
 						}
 					break;
 					case 'keywords': 
 						if($configData['keywords']) {
 							$pageData['keywords'] = $configData['keywords'];
 						} elseif($configData['keywordsSmart'] && $page->get(implode('|', $configData['keywordsSmart'])) != '') {
-							$pageData['keywords'] = $page->get(implode('|', $configData['keywordsSmart']));
+							$pageData['keywords'] = strip_tags($page->get(implode('|', $configData['keywordsSmart'])));
 						}
 					break;
 					case 'description': 
 						if($configData['description']) {
 							$pageData['description'] = $configData['description'];
 						} elseif($configData['descriptionSmart'] && $page->get(implode('|', $configData['descriptionSmart'])) != '') {
-							$pageData['description'] = $page->get(implode('|', $configData['descriptionSmart']));
+							$pageData['description'] = strip_tags($page->get(implode('|', $configData['descriptionSmart'])));
 						}
 					break;
 					case 'image': 
@@ -302,6 +306,22 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 			</script>
 			<!-- End: Google Analytics -->';
 		}
+		
+		$piwikAnalytics = '';
+		if($configData['piwikAnalyticsUrl']) {			
+			$piwikAnalytics = '<!-- Piwik -->
+			<script type="text/javascript">
+				var _paq = _paq || [];
+				(function(){ var u=(("https:" == document.location.protocol) ? "https://'.$configData['piwikAnalyticsUrl'].'/" : "http://'.$configData['piwikAnalyticsUrl'].'/");
+				_paq.push([\'setSiteId\', '.$configData['piwikAnalyticsIDSite'].']);
+				_paq.push([\'setTrackerUrl\', u+\'piwik.php\']);
+				_paq.push([\'trackPageView\']);
+				_paq.push([\'enableLinkTracking\']);
+				var d=document, g=d.createElement(\'script\'), s=d.getElementsByTagName(\'script\')[0]; g.type=\'text/javascript\'; g.defer=true; g.async=true; g.src=u+\'piwik.js\';
+				s.parentNode.insertBefore(g,s); })();
+			</script>
+			<!-- End Piwik Code -->';
+		}
 
 
 		// add "render"
@@ -318,8 +338,9 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 			$rendered .= '<meta name="'.$name.'" content="'.$content.'">'.PHP_EOL;
 		}
 
-		// replace whitespaces
+		// replace whitespaces and add analytics code
 		$rendered .= preg_replace('/^\s+|\s+$/m', '', $googleAnalytics).PHP_EOL;
+		$rendered .= preg_replace('/^\s+|\s+$/m', '', $piwikAnalytics).PHP_EOL;
 
 		if($this->addWhitespace) {
 			$renderedTmp = '';
@@ -640,7 +661,7 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 		$field->addOption('noydir');
 		$field->value = $data['robots'];
 		$fieldset->add($field);
-		
+
 		// Limits
 		$field = $modules->get("InputfieldCheckbox");
 		$field->name = "hardLimit";
@@ -649,10 +670,6 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 		$field->checked = $data['hardLimit'];
 		$field->columnWidth = '33%';
 		$fieldset->add($field);
-		
-		if ($data['titleLimit'] == '' || $data['titleLimit'] == 0) {
-			$data['titleLimit'] = '60';
-		}
 
 		$field = $modules->get("InputfieldInteger");
 		$field->name = "titleLimit";
@@ -662,10 +679,6 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 		$field->attr('min', '1');
 		$field->columnWidth = '34%';
 		$fieldset->add($field);
-		
-		if ($data['descriptionLimit'] == '' || $data['descriptionLimit'] == 0) {
-			$data['descriptionLimit'] = '160';
-		}
 
 		$field = $modules->get("InputfieldInteger");
 		$field->name = "descriptionLimit";
@@ -738,6 +751,24 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 		$field->description = __("Google Analytics code will be embedded if this field is populated.");
 		$field->notes = __('How to find your code: https://support.google.com/analytics/answer/1008080. It should look like: UA-XXXXXXX-X.');
 		$field->value = $data['googleAnalytics'];
+		$field->columnWidth = '50%';
+		$fieldset->add($field);
+		
+		$field = $modules->get("InputfieldText");
+		$field->name = "piwikAnalytics";
+		$field->label = __("Piwik Analytics URL");
+		$field->description = __("Piwik code will be embedded if both Piwik fields are populated.");
+		$field->value = $data['piwikAnalyticsUrl'];
+		$field->notes = __('Url without http:// or https://');
+		$field->columnWidth = '25%';
+		$fieldset->add($field);
+		
+		$field = $modules->get("InputfieldText");
+		$field->name = "piwikAnalytics";
+		$field->label = __("Piwik Analytics IDSite");
+		$field->description = __("Piwik code will be embedded if both Piwik fields are populated.");
+		$field->value = $data['piwikAnalyticsIDSite'];
+		$field->columnWidth = '25%';
 		$fieldset->add($field);
 
 
@@ -775,52 +806,25 @@ class MarkupSEO extends WireData implements Module, ConfigurableModule {
 
 		return $form;
 	}
-	
-	static private function javascriptCounter($page,$configData) {
-		$descriptionLimit = $configData['descriptionLimit'];
-		$titleLimit = $configData['titleLimit'];
-		if ($configData['hardLimit'] == 1) {
-			$hardLimit = "
-				if (remainingChars <= 0) {
-					$(this).val($(this).val().substring(0, limit));
-				}
-			";
-			$hardlimit .= "$(this).siblings('p.counter').text(remainingChars+'/'+limit+' characters used');";
-			/* Commented to show the true values used for now -
-			 * if hard limits are enforced on page load then
-			 * these should be uncommented to limit the count
-			 * to the set limit(s). Also comment $hardlimit above
-			 * and uncomment $hardlimit below.
-			 */
-			#	$hardlimit .= "$(this).siblings('p.counter').text(remainingChars<=0?0+'/'+limit:remainingChars+'/'+limit+' characters used');";
-			#	$page->seo_description = substr($page->seo_description, 0, $descriptionLimit);
-			#	$page->seo_title = substr($page->seo_title, 0, $titleLimit);
-			$descriptionChars = strlen($page->seo_description);
-			$titleChars = strlen($page->seo_title);
-		} else {
-			$descriptionChars = strlen($page->seo_description);
-			$titleChars = strlen($page->seo_title);
-			$hardLimit = "
-				$(this).siblings('p.counter').text(remainingChars+'/'+limit+' characters used');
-			";
-		}
-		$titleCount = $titleLimit-$titleChars;
-		$titleDescription = $descriptionLimit-$descriptionChars;
+
+	static private function javascriptCounter($hardLimit, $titleLimit, $descriptionLimit) {
+		$string = __('characters used');
 		$code = "
 		$(document).ready(function(){
-			$('#Inputfield_seo_title').siblings('p').after('<p class=\'counter\'>{$titleCount}/{$titleLimit} characters used</p>');
-			$('#Inputfield_seo_description').siblings('p').after('<p class=\'counter\'>{$titleDescription}/{$descriptionLimit} characters used</p>');
-			$('#Inputfield_seo_title').on('load propertychange keyup input paste',
-			function () {
-				var limit = {$titleLimit};
-				var remainingChars = limit - $(this).val().length;
-				{$hardLimit}
-			});
-			$('#Inputfield_seo_description').on('load propertychange keyup input paste',
-			function () {
-				var limit = {$descriptionLimit};
-				var remainingChars = limit - $(this).val().length;
-				{$hardLimit}
+			$('#Inputfield_seo_title').data('seolimit', ".$titleLimit.");
+			$('#Inputfield_seo_description').data('seolimit', ".$descriptionLimit.");
+
+			if(".($hardLimit ?: 0).") {
+				$('#Inputfield_seo_title').attr('maxlength', ".$titleLimit.");
+				$('#Inputfield_seo_description').attr('maxlength', ".$descriptionLimit.");
+			}
+
+			$('#Inputfield_seo_title, #Inputfield_seo_description').each(function(){
+				$(this).before('<p class=\"counter notes\"><span class=\"remainingChars\">' + $(this).val().length + '</span>/' + $(this).data('seolimit') + ' ".$string.".</p>');
+
+				$(this).on('change load propertychange keyup input paste', function(el){
+					$(this).siblings('.counter').children('.remainingChars').html($(this).val().length);
+				});
 			});
 		});
 		";
